@@ -2,7 +2,7 @@ from OpenGL.GLUT import *
 from OpenGL.GLU import *
 from OpenGL.GL import *
 import numpy as np
-import sys, math, os
+import sys, math, os, time
 
 EXIT = -1
 FIRST = 0
@@ -34,17 +34,14 @@ def display():
     global raw_points, gesamtmatrix
     global rotY, rotX, rotZ, rotation
 
-
-
     bbmittelpunkt = np.array(
         [(min(xlist) + max(xlist)) / 2, (min(ylist) + max(ylist)) / 2, (min(zlist) + max(zlist)) / 2])
 
     biggestpoint = np.array([max(xlist), max(ylist), max(zlist)])
     smallestpoint = np.array([min(xlist), min(ylist), min(zlist)])
 
-    # bb_kantenlänge = Skalierungsfaktor
     bb_kantenlaenge = 2 / max(biggestpoint - smallestpoint)
-    sk = 1.5 * bb_kantenlaenge
+    sk = bb_kantenlaenge
 
     # Skalierungsmatrix
     skalierung = np.array([[sk, 0, 0, 0],
@@ -58,10 +55,8 @@ def display():
          [0, 0, 1, -bbmittelpunkt[2]],
          [0, 0, 0, 1]])
 
-
-
-    gesamtmatrix = rotation @ skalierung
-    print(gesamtmatrix)
+    gesamtmatrix = rotation @ skalierung @ transformation
+    print('draw')
 
     """ Render all objects"""
     glClear(GL_COLOR_BUFFER_BIT)  # clear screen
@@ -69,11 +64,8 @@ def display():
 
     glBegin(GL_POINTS)
     for p in raw_points:
-        #p = np.append(p, 1)
-        print(p)
         pp = gesamtmatrix @ p
         glVertex3f(pp[0], pp[1], pp[2])
-
     glEnd()
 
     glutSwapBuffers()  # swap buffer
@@ -169,7 +161,7 @@ def main():
     #Punkte einlesen
     global raw_points, xlist, ylist, zlist
 
-    data = open('cow.raw')
+    data = open('elephant.raw')
     raw_points = [np.append(np.array([float(y[0]), float(y[1]), float(y[2])]), 1) for y in
                   [x.split() for x in data.readlines()]]
     #raw_points = [np.array([float(y[0]), float([y[1]]), float([y[2]])]) for y in [x.split() for x in data.readlines()]]
@@ -199,7 +191,11 @@ def main():
 
     init(500, 500)  # initialize OpenGL state
 
+
+
     glutMainLoop()  # start even processing
+
+
 
 
 if __name__ == "__main__":
