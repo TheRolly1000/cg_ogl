@@ -55,7 +55,7 @@ def display():
          [0, 0, 1, -bbmittelpunkt[2]],
          [0, 0, 0, 1]])
 
-    gesamtmatrix = rotation @ skalierung @ transformation
+    gesamtmatrix = rotation @ transformation
     print('draw')
 
     """ Render all objects"""
@@ -161,7 +161,7 @@ def main():
     #Punkte einlesen
     global raw_points, xlist, ylist, zlist
 
-    data = open('elephant.raw')
+    data = open('cow.raw')
     raw_points = [np.append(np.array([float(y[0]), float(y[1]), float(y[2])]), 1) for y in
                   [x.split() for x in data.readlines()]]
     #raw_points = [np.array([float(y[0]), float([y[1]]), float([y[2]])]) for y in [x.split() for x in data.readlines()]]
