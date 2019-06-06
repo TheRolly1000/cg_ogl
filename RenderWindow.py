@@ -1,15 +1,4 @@
 """
-/*******************************************************************************
- *
- *            #, #,         CCCCCC  VV    VV MM      MM RRRRRRR
- *           %  %(  #%%#   CC    CC VV    VV MMM    MMM RR    RR
- *           %    %## #    CC        V    V  MM M  M MM RR    RR
- *            ,%      %    CC        VV  VV  MM  MM  MM RRRRRR
- *            (%      %,   CC    CC   VVVV   MM      MM RR   RR
- *              #%    %*    CCCCCC     VV    MM      MM RR    RR
- *             .%    %/
- *                (%.      Computer Vision & Mixed Reality Group
- *
  ******************************************************************************/
 /**          @copyright:   Hochschule RheinMain,
  *                         University of Applied Sciences
@@ -29,7 +18,6 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
 from OpenGL.arrays import vbo
-
 import numpy as np
 
 
@@ -54,6 +42,8 @@ class Scene:
         data = open("cow.obj")
 
         self.vertices = []
+        self.faces = []
+
         xlist = []
         ylist = []
         zlist = []
@@ -61,17 +51,35 @@ class Scene:
         for line in data.readlines():
             split = line.split()
 
-            if split[0] == "f":
+            # bei f split nach slash und schauen ob das mittlere element leer ist
+            # f v/vt/vn v/vt/vn v/vt/vn
+
+            # bei kuh muessen selbst normalen berechnet werden fuer beleuchtung
+
+
+            if split[0] == "v":
                 xlist.append(float(split[1]))
                 ylist.append(float(split[2]))
                 zlist.append(float(split[3]))
-
                 self.vertices.append(np.array([float(split[1]), float(split[2]), float(split[3])]))
+            elif split[0] == "f": # enthaelt indizes von vertexliste (im Fall 1.)
+                self.faces.append([int(split[1]), int(split[2]), int(split[3])])
+            elif split[0] == "vn": # vertex-normalen
+                self.normals.append(np.array([float(split[1]), float(split[2]), float(split[3])]))
 
-        self.vbo = vbo.VBO(np.array(self.vertices, 'f'))
+
+        # array der normalen muss genauso lang sein wie vertices!!
+        if len(self.normals) == 0:
+            self.normals = [0 for x in self.vertices] # init mit nullen
+
+            for f in self.faces: #berechne normalen jedes faces
+                normal = np.cross((self.vertices[f[2]-1] - self.vertices[f[0]-1]), (self.vertices[f[2]-1] - self.vertices[f[1]-1]))
+                self.normals[f[0]-1] += normal
+                self.normals[f[1]-1] += normal
+                self.normals[f[1]-1] += normal
+
 
         # bounding box
-
         self.bb_center = np.array(
             [(min(xlist) + max(xlist)) / 2, (min(ylist) + max(ylist)) / 2, (min(zlist) + max(zlist)) / 2])
 
@@ -128,22 +136,27 @@ class Scene:
         # glVertex2fv(self.point)
         # glEnd()
 
-        print('render')
+        # net sicher ob das so korrekt is hier :(
+        vbo_v = vbo.VBO(np.array(self.vertices, 'f'))
+        vbo_n = vbo.VBO(np.array(self.normals, 'f'))
+
 
         glColor3f(0, 0, 1.0)
 
-
+        # fuer vbos brauch ich noch die normalen
 
         self.vbo.bind()
-        glVertexPointerf(self.vbo)
+        glVertexPointerf(vbo)
+        glNormalPointerf()
         glEnableClientState(GL_VERTEX_ARRAY)
-        glDrawArrays(GL_TRIANGLES, 0, 3)
+        glEnableClientState(GL_NORMAL_ARRAY)
+        #glDrawArrays(GL_POLYGON, 0, 3)
+
+        glDrawElements(GL_POLYGON, len(self.faces)-1)
+
         self.vbo.unbind()
         glDisableClientState(GL_VERTEX_ARRAY)
-
-
-
-
+        glDisableClientState(GL_NORMAL_ARRAY)
 
 
         # render the vector starting at the point
@@ -267,7 +280,6 @@ class RenderWindow:
                 # render scene
                 if self.animation:
                     self.scene.step()
-
 
                 self.scene.render()
                 glfw.swap_buffers(self.window)
