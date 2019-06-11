@@ -1,17 +1,3 @@
-"""
- ******************************************************************************/
-/**          @copyright:   Hochschule RheinMain,
- *                         University of Applied Sciences
- *              @author:   Prof. Dr. Ulrich Schwanecke
- *             @version:   0.9
- *                @date:   03.06.2019
- ******************************************************************************/
-/**         RenderWindow.py
- *
- *          Simple Python OpenGL program that uses PyOpenGL + GLFW to get an
- *          OpenGL 3.2 context and display some 2D animation.
- ****
-"""
 
 import glfw
 from OpenGL.GL import *
@@ -20,10 +6,20 @@ from OpenGL.GLUT import *
 from OpenGL.arrays import vbo
 import numpy as np
 
+startP = np.array([0.0, 0.0, 0.0])
+actOri = 1
+angle = 0
+axis = np.array([0.0, 0.0, 0.0])
+
+translateX = 0.0
+translateY = 0.0
+
+colortoggle = False
+objectcolor = np.array([.0, .90, .80])
+
+perspectiveswitch = False
 
 class Scene:
-    """ OpenGL 2D scene class """
-
     # initialization
     def __init__(self, width, height, window):
         # time
@@ -35,6 +31,14 @@ class Scene:
         self.pointsize = 3
         self.width = width
         self.height = height
+
+        self.xlight = 0.0
+        self.ylight = 1.0
+        self.zlight = 0.0
+
+        self.rotY = 0
+        self.p_light = np.array([1.0, 0, 0, 0, 0, 1.0, 0, -1.0/self.ylight, 0, 0, 1.0, 0, 0, 0, 0, 0], 'f')
+
         glPointSize(self.pointsize)
         glLineWidth(self.pointsize)
 
@@ -43,6 +47,8 @@ class Scene:
 
         self.vertices = []
         self.faces = []
+        self.normals = []
+        self.facevertarray = []
 
         xlist = []
         ylist = []
@@ -50,22 +56,31 @@ class Scene:
 
         for line in data.readlines():
             split = line.split()
-
+            print(split)
             # bei f split nach slash und schauen ob das mittlere element leer ist
             # f v/vt/vn v/vt/vn v/vt/vn
 
-            # bei kuh muessen selbst normalen berechnet werden fuer beleuchtung
+            if len(split) > 0:
+                # bei kuh muessen selbst normalen berechnet werden fuer beleuchtung
+                if split[0] == "v":
+                    xlist.append(float(split[1]))
+                    ylist.append(float(split[2]))
+                    zlist.append(float(split[3]))
+                    self.vertices.append(np.array([float(split[1]), float(split[2]), float(split[3])], dtype='float32'))
+                elif split[0] == "f": # enthaelt indizes von vertexliste (im Fall 1.)
+                    if split[1].__contains__("//"):
+                        splitx = split[1].split("//")
+                        splity = split[2].split("//")
+                        splitz = split[3].split("//")
+                        self.faces.append([int(splitx[0]), int(splity[0]), int(splitz[0])])
+                        self.facevertarray.extend((self.vertices[int(splitx[0])-1], self.vertices[int(splitx[1])-1],
+                                                   self.vertices[int(splity[0])-1], self.vertices[int(splity[1])-1],
+                                                  self.vertices[int(splitz[0]) - 1], self.vertices[int(splitz[1]) - 1]))
 
-
-            if split[0] == "v":
-                xlist.append(float(split[1]))
-                ylist.append(float(split[2]))
-                zlist.append(float(split[3]))
-                self.vertices.append(np.array([float(split[1]), float(split[2]), float(split[3])]))
-            elif split[0] == "f": # enthaelt indizes von vertexliste (im Fall 1.)
-                self.faces.append([int(split[1]), int(split[2]), int(split[3])])
-            elif split[0] == "vn": # vertex-normalen
-                self.normals.append(np.array([float(split[1]), float(split[2]), float(split[3])]))
+                    else:
+                        self.faces.append([int(split[1]), int(split[2]), int(split[3])])
+                elif split[0] == "vn": # vertex-normalen
+                    self.normals.append(np.array([float(split[1]), float(split[2]), float(split[3])], dtype='float32'))
 
 
         # array der normalen muss genauso lang sein wie vertices!!
@@ -76,22 +91,30 @@ class Scene:
                 normal = np.cross((self.vertices[f[2]-1] - self.vertices[f[0]-1]), (self.vertices[f[2]-1] - self.vertices[f[1]-1]))
                 self.normals[f[0]-1] += normal
                 self.normals[f[1]-1] += normal
-                self.normals[f[1]-1] += normal
+                self.normals[f[2]-1] += normal
 
+
+        # Make an 1-D Array for VBO
+        if len(self.facevertarray) == 0:
+            for f in self.faces:
+                self.facevertarray.append(self.vertices[f[0]-1])
+                self.facevertarray.append(self.normals[f[0]-1])
+                self.facevertarray.append(self.vertices[f[1]-1])
+                self.facevertarray.append(self.normals[f[1]-1])
+                self.facevertarray.append(self.vertices[f[2]-1])
+                self.facevertarray.append(self.normals[f[2]-1])
+
+        self.objectvbo = vbo.VBO(np.array(self.facevertarray, 'f'))
 
         # bounding box
         self.bb_center = np.array(
-            [(min(xlist) + max(xlist)) / 2, (min(ylist) + max(ylist)) / 2, (min(zlist) + max(zlist)) / 2])
+            [(min(xlist) + max(xlist)) / 2, (min(ylist) + max(ylist)) / 2, (min(zlist) + max(zlist)) / 2], 'f')
 
         biggestpoint = np.array([max(xlist), max(ylist), max(zlist)])
         smallestpoint = np.array([min(xlist), min(ylist), min(zlist)])
 
         bb_kantenlaenge = 2 / max(biggestpoint - smallestpoint)
         self.scale_factor = bb_kantenlaenge
-
-        #glTranslatef(-self.bb_center, -self.bb_center, -self.bb_center)
-        glScalef(self.scale_factor, self.scale_factor, self.scale_factor)
-
 
     # step
     def step(self):
@@ -128,57 +151,69 @@ class Scene:
         mv = v + 2 * l * n
         return mv
 
+    def rotate(self, angle, axis):
+        c, mc = np.cos(angle), 1-np.cos(angle)
+        s = np.sin(angle)
+        l = np.sqrt(np.dot(np.array(axis), np.array(axis)))
+
+        if l == 0:
+            return np.identity(4)
+
+        x, y, z = np.array(axis) / l
+        r = np.matrix([[x*x*mc+c, x*y*mc-z*s, x*z*mc+y*s, 0],
+                        [x*y*mc+z*s, y*y*mc+c, y*z*mc-x*s, 0],
+                        [x*z*mc-y*s, y*z*mc+x*s, z*z*mc+c, 0],
+                        [0, 0, 0, 1]])
+
+        return r.transpose()
+
+
     # render
     def render(self):
-        # render a point
-        # glBegin(GL_POINTS)
-        # glColor(0.0, 0.0, 1.0)
-        # glVertex2fv(self.point)
-        # glEnd()
+        global actOri, objectcolor, perspectiveswitch
 
-        # net sicher ob das so korrekt is hier :(
-        vbo_v = vbo.VBO(np.array(self.vertices, 'f'))
-        vbo_n = vbo.VBO(np.array(self.normals, 'f'))
+        glLoadIdentity()
 
+        self.objectvbo.bind()
 
-        glColor3f(0, 0, 1.0)
-
-        # fuer vbos brauch ich noch die normalen
-
-        self.vbo.bind()
-        glVertexPointerf(vbo)
-        glNormalPointerf()
         glEnableClientState(GL_VERTEX_ARRAY)
         glEnableClientState(GL_NORMAL_ARRAY)
-        #glDrawArrays(GL_POLYGON, 0, 3)
 
-        glDrawElements(GL_POLYGON, len(self.faces)-1)
+        glVertexPointer(3, GL_FLOAT, 24, self.objectvbo)
+        glNormalPointer(GL_FLOAT, 24, self.objectvbo + 12)
 
-        self.vbo.unbind()
+        glLoadIdentity()
+
+
+
+        glColor3f(objectcolor[0], objectcolor[1], objectcolor[2])
+
+        glMultMatrixf(actOri * self.rotate(angle, axis)) # Rotation wie VL
+
+        glScalef(self.scale_factor, self.scale_factor, self.scale_factor)
+        glTranslatef(-self.bb_center[0], -self.bb_center[1], -self.bb_center[2])
+        glDrawArrays(GL_TRIANGLES, 0, len(self.faces*3))
+
+        # SCHATTEN --------------
+        # glMatrixMode(GL_MODELVIEW)
+        # glPushMatrix()
+        # glTranslatef(self.xlight, self.ylight, self.zlight)
+        # glMultMatrixf(self.p_light)
+        # glTranslatef(-self.xlight, -self.ylight, -self.zlight)
+        # glColor3f(0.7, 0.7, 0.7)
+        #
+        # # Beleuchtung beim Drawn des Schattens ausschalten, weil schatten nicht beleuchtet werden soll
+        # glDisable(GL_DEPTH_TEST)
+        # glDisable(GL_LIGHTING)
+        # glDrawArrays(GL_TRIANGLES, 0, len(self.faces * 3))
+        #
+        # glEnable(GL_DEPTH_TEST)
+        # glEnable(GL_LIGHTING)
+        # glPopMatrix()
+        # -----------------------
+        self.objectvbo.unbind()
         glDisableClientState(GL_VERTEX_ARRAY)
         glDisableClientState(GL_NORMAL_ARRAY)
-
-
-        # render the vector starting at the point
-        if self.showVector:
-            glColor(1.0, 0.0, 0.0)
-            glBegin(GL_LINES)
-            # the line from the point to the end of the vector
-            glVertex2fv(self.point)
-            glVertex2fv(self.point + self.vector)
-
-            # make an arrow at the tip of the vector
-            normvector = self.vector / np.linalg.norm(self.vector)
-            rotnormvec = np.array([-normvector[1], normvector[0]])
-            p1 = self.point + self.vector - 6 * normvector
-            a = p1 + 3 * self.pointsize / 2 * rotnormvec
-            b = p1 - 3 * self.pointsize / 2 * rotnormvec
-            glVertex2fv(self.point + self.vector)
-            glVertex2fv(a)
-            glVertex2fv(self.point + self.vector)
-            glVertex2fv(b)
-            glEnd()
-
 
 class RenderWindow:
     """GLFW Rendering window class"""
@@ -195,17 +230,15 @@ class RenderWindow:
         # restore cwd
         os.chdir(cwd)
 
-        # version hints
-        # glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3)
-        # glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3)
-        # glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, GL_TRUE)
-        # glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
+        self.action = 0
+
+        self.mouse1 = False
 
         # buffer hints
         glfw.window_hint(glfw.DEPTH_BITS, 32)
 
         # define desired frame rate
-        self.frame_rate = 100
+        self.frame_rate = 30
 
         # make a window
         self.width, self.height = 640, 480
@@ -221,9 +254,20 @@ class RenderWindow:
         # initialize GL
         glViewport(0, 0, self.width, self.height)
         glEnable(GL_DEPTH_TEST)
-        glClearColor(1.0, 1.0, 1.0, 1.0)
+        glClearColor(0, 0, 0, 1.0)
         glMatrixMode(GL_PROJECTION)
-        glOrtho(-self.width / 2, self.width / 2, -self.height / 2, self.height / 2, -2, 2)
+
+        # Enable Lights vorlesung
+        glEnable(GL_LIGHTING)
+        glEnable(GL_LIGHT0)
+        glEnable(GL_DEPTH_TEST)
+        glEnable(GL_NORMALIZE)
+
+        glEnable(GL_COLOR_MATERIAL)
+        glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE)
+
+        glOrtho(-1.5 * self.aspect, 1.5 * self.aspect, -1.5, 1.5, -1, 10)
+
         glMatrixMode(GL_MODELVIEW)
 
         # set window callbacks
@@ -241,21 +285,101 @@ class RenderWindow:
         self.animation = False
 
 
+    def projectOnSphere(self, x, y, r):
+        width, height = glfw.get_window_size(self.window)
+
+        x, y = x-width/2.0, height/2.0-y
+        a = min(r*r, x**2 + y**2)
+        z = np.sqrt(r*r - a)
+        l = np.sqrt(x**2 + y**2 + z**2)
+        return x/l, y/l, z/l
+
+    def mousemoved(self):
+        global angle, axis, startP
+        x, y = glfw.get_cursor_pos(self.window)
+
+        r = min(self.width, self.height)/2.0
+        moveP = self.projectOnSphere(x, y, r)
+        angle = np.arccos(np.dot(startP, moveP))
+        axis = np.cross(startP, moveP)
+
+        print("mouseMoved")
+        print(axis)
+        print(angle)
+
     def onMouseButton(self, win, button, action, mods):
+        global startP
         print("mouse button: ", win, button, action, mods)
+        # button = Maustaste,  action=1 ist klick
+
+        if button is 0 and action is 1:
+            self.mouse1 = True
+            x, y = glfw.get_cursor_pos(self.window)
+            width, height = glfw.get_window_size(self.window)
+            r = min(width, height)/2 #ballradius
+            startP = self.projectOnSphere(x, y, r)
+        elif button is 0 and action is 0:
+            self.mouse1 = False
+
 
     def onKeyboard(self, win, key, scancode, action, mods):
         print("keyboard: ", win, key, scancode, action, mods)
+        global colortoggle, objectcolor, perspectiveswitch
+
         if action == glfw.PRESS:
+            # T to switch between object and background color
+            if key == glfw.KEY_T:
+                if colortoggle:
+                    colortoggle = False
+                else:
+                    colortoggle = True
+
             # ESC to quit
             if key == glfw.KEY_ESCAPE:
                 self.exitNow = True
-            if key == glfw.KEY_V:
-                # toggle show vector
-                self.scene.showVector = not self.scene.showVector
-            if key == glfw.KEY_A:
-                # toggle animation
-                self.animation = not self.animation
+            if key == glfw.KEY_S:
+                if colortoggle:
+                    glClearColor(0, 0, 0, 1.0)
+                else:
+                    objectcolor = np.array([.0, .0, .0])
+            if key == glfw.KEY_W:
+                if colortoggle:
+                    glClearColor(1.0, 1.0, 1.0, 1.0)
+                else:
+                    objectcolor = np.array([1.0, 1.0, 1.0])
+            if key == glfw.KEY_R:
+                if colortoggle:
+                    glClearColor(1.0, 0, 0, 1.0)
+                else:
+                    objectcolor = np.array([1.0, .0, .0])
+            if key == glfw.KEY_G:
+                if colortoggle:
+                    glClearColor(0, 1.0, 0, 1.0)
+                else:
+                    objectcolor = np.array([.0, 1.0, .0])
+            if key == glfw.KEY_B:
+                if colortoggle:
+                    glClearColor(0, 0, 1.0, 1.0)
+                else:
+                    objectcolor = np.array([.0, .0, 1.0])
+
+            # Switch PERSPECTIVE
+            if key == glfw.KEY_O:
+                perspectiveswitch = False
+                glMatrixMode(GL_PROJECTION)
+                glLoadIdentity()
+                glOrtho(-1.5 * self.aspect, 1.5 * self.aspect, -1.5, 1.5, -1, 10)
+                gluLookAt(0, 0, 3, 0, 0, 0, 0, 1, 0)
+                glMatrixMode(GL_MODELVIEW)
+
+            if key == glfw.KEY_P:
+                perspectiveswitch = True
+                glMatrixMode(GL_PROJECTION)
+                glLoadIdentity()
+                glFrustum(-1.5 * self.aspect, 1.5 * self.aspect, -1.5, 1.5, 2.5, 10)
+                gluLookAt(0, 0, 4, 0, 0, 0, 0, 1, 0)
+                glMatrixMode(GL_MODELVIEW)
+                #glTranslatef(0.0, 0.0, 2 * np.sqrt(3))  # Warum??
 
     def onSize(self, win, width, height):
         print("onsize: ", win, width, height)
@@ -281,7 +405,11 @@ class RenderWindow:
                 if self.animation:
                     self.scene.step()
 
+                if self.mouse1:
+                    self.mousemoved()
+
                 self.scene.render()
+
                 glfw.swap_buffers(self.window)
 
                 # Poll for and process events
