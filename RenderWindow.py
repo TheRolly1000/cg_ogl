@@ -19,6 +19,8 @@ objectcolor = np.array([.0, .90, .80])
 
 perspectiveswitch = False
 
+shadow = False
+
 class Scene:
     # initialization
     def __init__(self, width, height, window):
@@ -33,8 +35,8 @@ class Scene:
         self.height = height
 
         self.xlight = 0.0
-        self.ylight = 1.0
-        self.zlight = 0.0
+        self.ylight = 10.0
+        self.zlight = -0.2
 
         self.rotY = 0
         self.p_light = np.array([1.0, 0, 0, 0, 0, 1.0, 0, -1.0/self.ylight, 0, 0, 1.0, 0, 0, 0, 0, 0], 'f')
@@ -43,7 +45,7 @@ class Scene:
         glLineWidth(self.pointsize)
 
         # loading obj-data
-        data = open("cow.obj")
+        data = open("elephant.obj")
 
         self.vertices = []
         self.faces = []
@@ -56,7 +58,7 @@ class Scene:
 
         for line in data.readlines():
             split = line.split()
-            print(split)
+
             # bei f split nach slash und schauen ob das mittlere element leer ist
             # f v/vt/vn v/vt/vn v/vt/vn
 
@@ -110,10 +112,10 @@ class Scene:
         self.bb_center = np.array(
             [(min(xlist) + max(xlist)) / 2, (min(ylist) + max(ylist)) / 2, (min(zlist) + max(zlist)) / 2], 'f')
 
-        biggestpoint = np.array([max(xlist), max(ylist), max(zlist)])
-        smallestpoint = np.array([min(xlist), min(ylist), min(zlist)])
+        self.biggestpoint = np.array([max(xlist), max(ylist), max(zlist)])
+        self.smallestpoint = np.array([min(xlist), min(ylist), min(zlist)])
 
-        bb_kantenlaenge = 2 / max(biggestpoint - smallestpoint)
+        bb_kantenlaenge = 2 / max(self.biggestpoint - self.smallestpoint)
         self.scale_factor = bb_kantenlaenge
 
     # step
@@ -170,10 +172,9 @@ class Scene:
 
     # render
     def render(self):
-        global actOri, objectcolor, perspectiveswitch
+        global actOri, objectcolor, perspectiveswitch, translateX, translateY, shadow
 
-        glLoadIdentity()
-
+        #glLoadIdentity()
         self.objectvbo.bind()
 
         glEnableClientState(GL_VERTEX_ARRAY)
@@ -182,11 +183,33 @@ class Scene:
         glVertexPointer(3, GL_FLOAT, 24, self.objectvbo)
         glNormalPointer(GL_FLOAT, 24, self.objectvbo + 12)
 
+        # SCHATTEN --------------
+        if shadow:
+            glMatrixMode(GL_MODELVIEW)
+            glPushMatrix()
+
+            glTranslatef(0, self.smallestpoint[1], 0)  # Schatten an die richtige Y-Stelle schieben
+
+            glTranslatef(self.xlight, self.ylight, self.zlight)
+            glMultMatrixf(self.p_light)
+            glTranslatef(-self.xlight, -self.ylight, -self.zlight)
+            glColor3f(0.7, 0.7, 0.7)
+
+            # Beleuchtung beim Drawn des Schattens ausschalten, weil schatten nicht beleuchtet werden soll
+            glDisable(GL_DEPTH_TEST)
+            glDisable(GL_LIGHTING)
+            glDrawArrays(GL_TRIANGLES, 0, len(self.faces * 3))
+
+            glEnable(GL_DEPTH_TEST)
+            glEnable(GL_LIGHTING)
+            glPopMatrix()
+        #  -----------------------
+
         glLoadIdentity()
 
-
-
         glColor3f(objectcolor[0], objectcolor[1], objectcolor[2])
+
+        glTranslatef(translateX, -translateY, 0) # Verschieben des Objekts auf der xy-ebene
 
         glMultMatrixf(actOri * self.rotate(angle, axis)) # Rotation wie VL
 
@@ -194,23 +217,8 @@ class Scene:
         glTranslatef(-self.bb_center[0], -self.bb_center[1], -self.bb_center[2])
         glDrawArrays(GL_TRIANGLES, 0, len(self.faces*3))
 
-        # SCHATTEN --------------
-        # glMatrixMode(GL_MODELVIEW)
-        # glPushMatrix()
-        # glTranslatef(self.xlight, self.ylight, self.zlight)
-        # glMultMatrixf(self.p_light)
-        # glTranslatef(-self.xlight, -self.ylight, -self.zlight)
-        # glColor3f(0.7, 0.7, 0.7)
-        #
-        # # Beleuchtung beim Drawn des Schattens ausschalten, weil schatten nicht beleuchtet werden soll
-        # glDisable(GL_DEPTH_TEST)
-        # glDisable(GL_LIGHTING)
-        # glDrawArrays(GL_TRIANGLES, 0, len(self.faces * 3))
-        #
-        # glEnable(GL_DEPTH_TEST)
-        # glEnable(GL_LIGHTING)
-        # glPopMatrix()
-        # -----------------------
+
+
         self.objectvbo.unbind()
         glDisableClientState(GL_VERTEX_ARRAY)
         glDisableClientState(GL_NORMAL_ARRAY)
@@ -232,7 +240,11 @@ class RenderWindow:
 
         self.action = 0
 
-        self.mouse1 = False
+        self.mouseL = False
+        self.mouseR = False
+
+        self.startX = 0
+        self.startY = 0
 
         # buffer hints
         glfw.window_hint(glfw.DEPTH_BITS, 32)
@@ -308,23 +320,38 @@ class RenderWindow:
         print(angle)
 
     def onMouseButton(self, win, button, action, mods):
-        global startP
+        global startP, translateX, translateY, angle, axis, actOri
         print("mouse button: ", win, button, action, mods)
         # button = Maustaste,  action=1 ist klick
 
         if button is 0 and action is 1:
-            self.mouse1 = True
+            self.mouseL = True
             x, y = glfw.get_cursor_pos(self.window)
             width, height = glfw.get_window_size(self.window)
             r = min(width, height)/2 #ballradius
             startP = self.projectOnSphere(x, y, r)
+
+            # Damit sich die Position nicht wieder bei jedem klick zurücksetzt
+            actOri = np.dot(actOri, self.scene.rotate(angle, axis))
+            angle = 0
+
         elif button is 0 and action is 0:
-            self.mouse1 = False
+            self.mouseL = False
+        elif button is 1 and action is 1:
+            self.mouseR = True
+            self.startX, self.startY = glfw.get_cursor_pos(self.window)
+
+            print(startP)
+            print("Schieb")
+
+        elif button is 1 and action is 0:
+            self.mouseR = False
+
 
 
     def onKeyboard(self, win, key, scancode, action, mods):
         print("keyboard: ", win, key, scancode, action, mods)
-        global colortoggle, objectcolor, perspectiveswitch
+        global colortoggle, objectcolor, perspectiveswitch, shadow
 
         if action == glfw.PRESS:
             # T to switch between object and background color
@@ -363,32 +390,72 @@ class RenderWindow:
                 else:
                     objectcolor = np.array([.0, .0, 1.0])
 
+            if key == glfw.KEY_H:
+                if shadow:
+                    shadow = False
+                    print("SHADOW OFF")
+                else:
+                    shadow = True
+                    print("SHADOW ON")
+
             # Switch PERSPECTIVE
             if key == glfw.KEY_O:
-                perspectiveswitch = False
-                glMatrixMode(GL_PROJECTION)
-                glLoadIdentity()
-                glOrtho(-1.5 * self.aspect, 1.5 * self.aspect, -1.5, 1.5, -1, 10)
-                gluLookAt(0, 0, 3, 0, 0, 0, 0, 1, 0)
-                glMatrixMode(GL_MODELVIEW)
+                self.switchPerspective(0)
 
             if key == glfw.KEY_P:
-                perspectiveswitch = True
-                glMatrixMode(GL_PROJECTION)
-                glLoadIdentity()
-                glFrustum(-1.5 * self.aspect, 1.5 * self.aspect, -1.5, 1.5, 2.5, 10)
-                gluLookAt(0, 0, 4, 0, 0, 0, 0, 1, 0)
-                glMatrixMode(GL_MODELVIEW)
-                #glTranslatef(0.0, 0.0, 2 * np.sqrt(3))  # Warum??
+                self.switchPerspective(1)
+
+    def switchPerspective(self, b):
+        global perspectiveswitch
+
+        if b == 0: # Ortho
+            perspectiveswitch = False
+            glMatrixMode(GL_PROJECTION)
+            glLoadIdentity()
+            glOrtho(-1.5 * self.aspect, 1.5 * self.aspect, -1.5, 1.5, -1, 10)
+            gluLookAt(0, 0, 3, 0, 0, 0, 0, 1, 0)
+            glMatrixMode(GL_MODELVIEW)
+        elif b == 1: # Frustum
+            perspectiveswitch = True
+            glMatrixMode(GL_PROJECTION)
+            glLoadIdentity()
+            glFrustum(-1.5 * self.aspect, 1.5 * self.aspect, -1.5, 1.5, 2.5, 10)
+            gluLookAt(0, 0, 4, 0, 0, 0, 0, 1, 0)
+            glMatrixMode(GL_MODELVIEW)
+        else:
+            print("Not supported mode")
+
 
     def onSize(self, win, width, height):
+        global perspectiveswitch
         print("onsize: ", win, width, height)
         self.width = width
         self.height = height
-        self.aspect = width / float(height)
-        glViewport(0, 0, self.width, self.height)
+
+        glViewport(0, 0, width, height)
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+
+        if self.width >= self.height:
+            self.aspect = width / float(height)
+
+            if perspectiveswitch:
+                self.switchPerspective(1)
+            else:
+                glOrtho(-1.5 * self.aspect, 1.5 * self.aspect, -1.5, 1.5, -1.0, 10)
+        else:
+            self.aspect = height / float(width)
+
+            if perspectiveswitch:
+                self.switchPerspective(1)
+            else:
+                glOrtho(-1.5, 1.5, -1.5 * self.aspect, 1.5 * self.aspect, -1.0, 10)
+
+        #glViewport(0, 0, self.width, self.height)
+        glMatrixMode(GL_MODELVIEW)
 
     def run(self):
+        global translateX, translateY
         # initializer timer
         glfw.set_time(0.0)
         t = 0.0
@@ -405,8 +472,16 @@ class RenderWindow:
                 if self.animation:
                     self.scene.step()
 
-                if self.mouse1:
+                # Wenn bestimmte Maustaste gedrückt gehalten wird
+                if self.mouseL:
                     self.mousemoved()
+
+                if self.mouseR:
+                    x, y = glfw.get_cursor_pos(self.window)
+                    # startP = np.array([x, y, 0])
+
+                    translateX = translateX + float(float((x - self.startX)) / self.width)
+                    translateY = translateY + float(float((y - self.startY)) / self.height)
 
                 self.scene.render()
 
