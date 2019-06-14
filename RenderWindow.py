@@ -34,9 +34,9 @@ class Scene:
         self.width = width
         self.height = height
 
-        self.xlight = 0.0
-        self.ylight = 10.0
-        self.zlight = -0.2
+        self.xlight = 0
+        self.ylight = 10000.0
+        self.zlight = -0.1
 
         self.rotY = 0
         self.p_light = np.array([1.0, 0, 0, 0, 0, 1.0, 0, -1.0/self.ylight, 0, 0, 1.0, 0, 0, 0, 0, 0], 'f')
@@ -45,7 +45,7 @@ class Scene:
         glLineWidth(self.pointsize)
 
         # loading obj-data
-        data = open("elephant.obj")
+        data = open("cow.obj")
 
         self.vertices = []
         self.faces = []
@@ -58,6 +58,8 @@ class Scene:
 
         for line in data.readlines():
             split = line.split()
+
+            split = list(filter(None, split))
 
             # bei f split nach slash und schauen ob das mittlere element leer ist
             # f v/vt/vn v/vt/vn v/vt/vn
@@ -74,6 +76,8 @@ class Scene:
                         splitx = split[1].split("//")
                         splity = split[2].split("//")
                         splitz = split[3].split("//")
+                        print(split)
+                        print(splitx)
                         self.faces.append([int(splitx[0]), int(splity[0]), int(splitz[0])])
                         self.facevertarray.extend((self.vertices[int(splitx[0])-1], self.vertices[int(splitx[1])-1],
                                                    self.vertices[int(splity[0])-1], self.vertices[int(splity[1])-1],
@@ -82,6 +86,7 @@ class Scene:
                     else:
                         self.faces.append([int(split[1]), int(split[2]), int(split[3])])
                 elif split[0] == "vn": # vertex-normalen
+                    print(split)
                     self.normals.append(np.array([float(split[1]), float(split[2]), float(split[3])], dtype='float32'))
 
 
@@ -143,16 +148,6 @@ class Scene:
 
         # print(self.point, self.vector)
 
-    # mirror a vector v at plane with normal n
-    def mirror(self, v, n):
-        # normalize n
-        normN = n / np.linalg.norm(n)
-        # project negative v on n
-        l = np.dot(-v, n)
-        # mirror v
-        mv = v + 2 * l * n
-        return mv
-
     def rotate(self, angle, axis):
         c, mc = np.cos(angle), 1-np.cos(angle)
         s = np.sin(angle)
@@ -163,9 +158,9 @@ class Scene:
 
         x, y, z = np.array(axis) / l
         r = np.matrix([[x*x*mc+c, x*y*mc-z*s, x*z*mc+y*s, 0],
-                        [x*y*mc+z*s, y*y*mc+c, y*z*mc-x*s, 0],
-                        [x*z*mc-y*s, y*z*mc+x*s, z*z*mc+c, 0],
-                        [0, 0, 0, 1]])
+                       [x*y*mc+z*s, y*y*mc+c, y*z*mc-x*s, 0],
+                       [x*z*mc-y*s, y*z*mc+x*s, z*z*mc+c, 0],
+                       [0, 0, 0, 1]])
 
         return r.transpose()
 
@@ -189,6 +184,7 @@ class Scene:
             glPushMatrix()
 
             glTranslatef(0, self.smallestpoint[1], 0)  # Schatten an die richtige Y-Stelle schieben
+            #glTranslatef(0, 0, 0)
 
             glTranslatef(self.xlight, self.ylight, self.zlight)
             glMultMatrixf(self.p_light)
@@ -198,8 +194,7 @@ class Scene:
             # Beleuchtung beim Drawn des Schattens ausschalten, weil schatten nicht beleuchtet werden soll
             glDisable(GL_DEPTH_TEST)
             glDisable(GL_LIGHTING)
-            glDrawArrays(GL_TRIANGLES, 0, len(self.faces * 3))
-
+            glDrawArrays(GL_TRIANGLES, 0, len(self.faces * 3)) # Schatten drawn
             glEnable(GL_DEPTH_TEST)
             glEnable(GL_LIGHTING)
             glPopMatrix()
@@ -216,8 +211,6 @@ class Scene:
         glScalef(self.scale_factor, self.scale_factor, self.scale_factor)
         glTranslatef(-self.bb_center[0], -self.bb_center[1], -self.bb_center[2])
         glDrawArrays(GL_TRIANGLES, 0, len(self.faces*3))
-
-
 
         self.objectvbo.unbind()
         glDisableClientState(GL_VERTEX_ARRAY)
@@ -242,6 +235,9 @@ class RenderWindow:
 
         self.mouseL = False
         self.mouseR = False
+        self.mouseM = False
+
+        self.flaggy = False
 
         self.startX = 0
         self.startY = 0
@@ -255,7 +251,7 @@ class RenderWindow:
         # make a window
         self.width, self.height = 640, 480
         self.aspect = self.width / float(self.height)
-        self.window = glfw.create_window(self.width, self.height, "2D Graphics", None, None)
+        self.window = glfw.create_window(self.width, self.height, "Super 3D Graphix", None, None)
         if not self.window:
             glfw.terminate()
             return
@@ -272,6 +268,7 @@ class RenderWindow:
         # Enable Lights vorlesung
         glEnable(GL_LIGHTING)
         glEnable(GL_LIGHT0)
+
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_NORMALIZE)
 
@@ -339,13 +336,24 @@ class RenderWindow:
             self.mouseL = False
         elif button is 1 and action is 1:
             self.mouseR = True
-            self.startX, self.startY = glfw.get_cursor_pos(self.window)
+
+            if not self.flaggy:
+                self.startX, self.startY = glfw.get_cursor_pos(self.window)
+
+            self.flaggy = True
 
             print(startP)
             print("Schieb")
 
         elif button is 1 and action is 0:
             self.mouseR = False
+            self.flaggy = False
+
+        elif button is 2 and action is 1:
+            self.mouseM = True
+            self.startX, self.startY = glfw.get_cursor_pos(self.window)
+        elif button is 2 and action is 0:
+            self.mouseM = False
 
 
 
@@ -469,8 +477,8 @@ class RenderWindow:
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
                 # render scene
-                if self.animation:
-                    self.scene.step()
+                #if self.animation:
+                    #self.scene.step()
 
                 # Wenn bestimmte Maustaste gedrückt gehalten wird
                 if self.mouseL:
@@ -478,10 +486,16 @@ class RenderWindow:
 
                 if self.mouseR:
                     x, y = glfw.get_cursor_pos(self.window)
-                    # startP = np.array([x, y, 0])
-
                     translateX = translateX + float(float((x - self.startX)) / self.width)
                     translateY = translateY + float(float((y - self.startY)) / self.height)
+
+                if self.mouseM:
+                    x, y = glfw.get_cursor_pos(self.window)
+
+                    if self.startY > y:
+                        self.scene.scale_factor = self.scene.scale_factor + self.scene.scale_factor * 0.05
+                    else:
+                        self.scene.scale_factor = self.scene.scale_factor - self.scene.scale_factor * 0.05
 
                 self.scene.render()
 
